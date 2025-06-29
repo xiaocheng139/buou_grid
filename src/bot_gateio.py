@@ -600,7 +600,7 @@ class GridTradingBot:
                 # print('多头持仓', self.long_position)
                 # 检查持仓是否超过阈值
                 if self.long_position > POSITION_THRESHOLD:
-                    print(f"持仓{self.long_position}超过极限阈值 {POSITION_THRESHOLD}，long装死")
+                    print(f"持仓{self.long_position}超过极限阈值 {self.position_threshold}，long装死")
                     # print('多头止盈单', self.sell_long_orders)
                     if self.sell_long_orders <= 0:
                         r = float((int(self.long_position / self.short_position) / 100) + 1)
@@ -654,7 +654,7 @@ class GridTradingBot:
         local_position_threshold = int(POSITION_THRESHOLD * 0.8)  # 阈值的 80%
 
         # 设置平仓数量
-        REDUCE_QUANTITY = int(POSITION_THRESHOLD * 0.1)  # 阈值的 10%
+        REDUCE_QUANTITY = int(self.position_threshold * 0.1)  # 阈值的 10%
 
         if self.long_position >= local_position_threshold and self.short_position >= local_position_threshold:
             logger.info(f"多头和空头持仓均超过阈值 {local_position_threshold}，开始双向平仓，减少库存风险")
@@ -716,8 +716,8 @@ class GridTradingBot:
             await self.initialize_short_orders()
         else:
             if not (0 < self.sell_short_orders <= self.short_initial_quantity) or not (0 < self.buy_short_orders <= self.short_initial_quantity):
-                if self.short_position > POSITION_THRESHOLD and current_time - self.last_short_order_time < ORDER_COOLDOWN_TIME:
-                    print(f"距离上次 short 挂止盈时间不足 {ORDER_COOLDOWN_TIME} 秒，跳过本次 short 挂单@ ticker")
+                if self.short_position > self.position_threshold and current_time - self.last_short_order_time < ORDER_COOLDOWN_TIME:
+                    print(f"距离上次 short 挂止盈时间不足 {self.order_cooldown_time} 秒，跳过本次 short 挂单@ ticker")
                 else:
                     await self.place_short_orders(self.latest_price)
 
