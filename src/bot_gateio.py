@@ -10,20 +10,6 @@ import math
 from decimal import Decimal, ROUND_HALF_UP
 import os
 
-# ==================== 配置 ====================
-API_KEY = ""  # 替换为你的 API Key
-API_SECRET = ""  # 替换为你的 API Secret
-COIN_NAME = "X"  # 交易币种
-GRID_SPACING = 0.004  # 网格间距 (0.3%)
-INITIAL_QUANTITY = 1  # 初始交易数量 (张数)
-LEVERAGE = 20  # 杠杆倍数
-WEBSOCKET_URL = "wss://fx-ws.gateio.ws/v4/ws/usdt"  # WebSocket URL
-POSITION_THRESHOLD = 60 * INITIAL_QUANTITY / GRID_SPACING * 2 / 100  # 锁仓阈值
-POSITION_LIMIT = 30 * INITIAL_QUANTITY / GRID_SPACING * 2 / 100  # 持仓数量阈值
-ORDER_COOLDOWN_TIME = 60  # 锁仓后的反向挂单冷却时间（秒）
-SYNC_TIME = 3  # 同步时间（秒）
-ORDER_FIRST_TIME = 1  # 首单间隔时间
-
 # ==================== 日志配置 ====================
 # 获取当前脚本的文件名（不带扩展名）
 script_name = os.path.splitext(os.path.basename(__file__))[0]
@@ -50,7 +36,7 @@ class CustomGate(ccxt.gate):
 
 # ==================== 网格交易机器人 ====================
 class GridTradingBot:
-    def __init__(self, api_key, api_secret, coin_name, grid_spacing, initial_quantity, leverage):
+    def __init__(self, api_key, api_secret, coin_name, grid_spacing, initial_quantity, leverage, position_threshold, position_limit, sync_time, order_first_time, websocket_url):
         self.api_key = api_key
         self.api_secret = api_secret
         self.coin_name = coin_name
@@ -223,7 +209,7 @@ class GridTradingBot:
 
     async def connect_websocket(self):
         """连接 WebSocket 并订阅 ticker 和持仓数据"""
-        async with websockets.connect(WEBSOCKET_URL) as websocket:
+        async with websockets.connect(self.websocket_url) as websocket:
             await self.subscribe_ticker(websocket)
             await self.subscribe_positions(websocket)
             await self.subscribe_orders(websocket)  # 订阅挂单更新
@@ -390,7 +376,7 @@ class GridTradingBot:
                 print(f"同步 position: 多头 {self.long_position} 张, 空头 {self.short_position} 张 @ ticker")
 
             # 检查持仓状态是否过时
-            if time.time() - self.last_orders_update_time > SYNC_TIME:  # 超过 60 秒未更新
+            if time.time() - self.last_orders_update_time > self.sync_time:  # 超过 60 秒未更新
                 self.buy_long_orders, self.sell_long_orders, self.sell_short_orders, self.buy_short_orders = self.check_orders_status()
                 self.last_orders_update_time = time.time()
                 print(f"同步 orders: 多头买单 {self.buy_long_orders} 张, 多头卖单 {self.sell_long_orders} 张,空头卖单 {self.sell_short_orders} 张, 空头买单 {self.buy_short_orders} 张 @ ticker")
@@ -492,7 +478,7 @@ class GridTradingBot:
             # logger.info(f"持仓过大超过阈值{POSITION_LIMIT}, {side}双倍止盈止损")
             self.long_initial_quantity = self.initial_quantity * 2
 
-        elif side == 'short' and POSITION_LIMIT < position:
+        elif side == 'short' and self.position_limit < position:
             # logger.info(f"持仓过大超过阈值{POSITION_LIMIT}, {side}双倍止盈止损")
             self.short_initial_quantity = self.initial_quantity * 2
 
@@ -521,7 +507,7 @@ class GridTradingBot:
         # 检查上次挂单时间，确保 10 秒内不重复挂单
         current_time = time.time()
         if current_time - self.last_short_order_time < ORDER_FIRST_TIME:
-            print(f"距离上次空头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
+            print(f"距离上次空头挂单时间不足 {self.order_first_time} 秒，跳过本次挂单")
             return
 
         # 撤销所有空头挂单
@@ -640,7 +626,7 @@ class GridTradingBot:
             self.get_take_profit_quantity(self.short_position, 'short')
             if self.short_position > 0:
                 # 检查持仓是否超过阈值
-                if self.short_position > POSITION_THRESHOLD:
+                if self.short_position < self.position_threshold:
                     print(f"持仓{self.short_position}超过极限阈值 {POSITION_THRESHOLD}，short 装死")
                     if self.buy_short_orders <= 0:
                         r = float((int(self.short_position / self.long_position) / 100) + 1)
@@ -737,9 +723,4 @@ class GridTradingBot:
 
 
 # ==================== 主程序 ====================
-async def main():
-    bot = GridTradingBot(API_KEY, API_SECRET, COIN_NAME, GRID_SPACING, INITIAL_QUANTITY, LEVERAGE)
-    await bot.run()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# The main function is now in run_bot.py

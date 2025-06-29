@@ -1,33 +1,54 @@
-# buou_grid
-## 视频说明：[https://youtu.be/CKlJ4K1rUW0](https://www.youtube.com/watch?v=Jf03Cuq0aFc)
+# Cryptocurrency Grid Trading Bot
 
+This project contains a collection of Python scripts for implementing grid trading strategies on various cryptocurrency exchanges.
 
-##### 配置说明：
+## Description
 
-###### COIN_NAME = "XRP"  # 交易币种
+Grid trading is a trading strategy that seeks to profit from market volatility by placing a series of buy and sell orders at predefined intervals around a set price. This bot automates this process.
 
-###### CONTRACT_TYPE = "USDT"  # 合约类型：USDT 或 USDC
+The project currently includes scripts for the following exchanges:
 
-###### GRID_SPACING = 0.004  # 上下挂单间距 (0.3%)
+*   **188**
+*   **Binance**
+*   **OKX**
 
-###### INITIAL_QUANTITY = 0.05  # 初始交易数量 (币的数量)
+The primary trading pair configured in the existing scripts is XRP, but they can be adapted for other trading pairs. The bot also uses Telegram to send notifications about its status and trades.
 
-###### LEVERAGE = 50  # 杠杆倍数
+## Prerequisites
 
-###### WEBSOCKET_URL = "wss://ws.okx.com:8443/ws/v5/public"  # WebSocket URL
+Before you begin, ensure you have Python 3 installed on your system.
 
-###### WEBSOCKET_PRIVATE_URL = "wss://ws.okx.com:8443/ws/v5/private"  # 私有频道URL
+## Installation
 
-###### POSITION_THRESHOLD = 4  # 锁仓阈值，持仓币的数量达到此值不再开单
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd <repository-directory>
+    ```
 
-###### POSITION_LIMIT = 1  # 持仓数量阈值，持仓币的数量达到此值对向倍投
+2.  **Install the required Python libraries:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-###### SYNC_TIME = 60  # 同步时间（秒）
+## Usage
 
-###### ORDER_FIRST_TIME = 10  # 首单间隔时间
+Each script is designed to be run as a standalone bot for a specific exchange.
 
+1.  **Configuration:**
+    *   Open the script you want to use (e.g., `grid_BN_XRP.py` for Binance).
+    *   Inside the script, you will need to configure your API keys for the respective exchange.
+    *   You will also need to provide your Telegram bot token and chat ID for notifications.
 
+2.  **Running the bot:**
+    ```bash
+    python <script_name>.py
+    ```
+    For example, to run the Binance XRP grid bot:
+    ```bash
+    python grid_BN_XRP.py
+    ```
 
-### 该网格在90%行情下表现较好，建议追求年化50%收益设计
-### 苟富贵勿相忘，如果觉得思路不错，打赏地址trc20: TUunBuqQ1ZDYt9WrA3ZarndFPQgefXqZAM
-###### 有带broker id
+## Disclaimer
+
+Trading cryptocurrencies involves significant risk. This bot is provided as-is, and the user assumes all responsibility for any financial losses. It is highly recommended to test the bot with small amounts or in a paper trading environment before deploying it with significant capital.
