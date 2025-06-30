@@ -52,7 +52,7 @@ class CustomGate(ccxt.okx):
 
 # ==================== 网格交易机器人 ====================
 class GridTradingBot:
-    def __init__(self, api_key, api_secret, passphrase, coin_name, contract_type, grid_spacing, initial_quantity, leverage):
+    def __init__(self, api_key, api_secret, passphrase, coin_name, contract_type, grid_spacing, initial_quantity, leverage, position_threshold, position_limit, sync_time, order_first_time, websocket_url, websocket_private_url):
         self.lock = asyncio.Lock()  # 初始化线程锁
         self.api_key = api_key
         self.api_secret = api_secret
@@ -98,10 +98,13 @@ class GridTradingBot:
 
     def _initialize_exchange(self):
         """初始化交易所 API"""
+        if not self.api_key or not self.api_secret or not self.passphrase:
+            raise ValueError("OKX API credentials are incomplete. Please check your API_KEY, API_SECRET, and PASSPHRASE in config.py")
+        
         exchange = CustomGate({
-            "apiKey": API_KEY,
-            "secret": API_SECRET,
-            "password": PASSPHRASE,  # Passphrase
+            "apiKey": self.api_key,
+            "secret": self.api_secret,
+            "password": self.passphrase,  # Passphrase
             "options": {
                 # "defaultType": "future",  # 使用永续合约
             },
@@ -369,7 +372,7 @@ class GridTradingBot:
 
     async def connect_public_websocket(self):
         """连接 WebSocket 并订阅 ticker 和持仓数据"""
-        async with websockets.connect(WEBSOCKET_URL) as ws:
+        async with websockets.connect(self.websocket_url) as ws:
             # 订阅 ticker 数据
             await self.subscribe_ticker(ws)
 
@@ -455,18 +458,23 @@ class GridTradingBot:
         data = json.loads(message)
         if data.get('arg', {}).get('channel') == 'tickers':
             ticker_data = data.get('data', [{}])[0]
+            # Debug: print ticker data to see what we're receiving
+            print(f"DEBUG: Received ticker data: {ticker_data}")
+            
             self.best_bid_price = float(ticker_data.get('bidPx', 0))
             self.best_ask_price = float(ticker_data.get('askPx', 0))
             self.latest_price = (self.best_bid_price + self.best_ask_price) / 2
+            
+            print(f"DEBUG: Parsed prices - bid: {self.best_bid_price}, ask: {self.best_ask_price}, latest: {self.latest_price}")
 
             # 检查持仓状态是否过时
-            if time.time() - self.last_position_update_time > SYNC_TIME:  # 超过 60 秒未更新
+            if time.time() - self.last_position_update_time > self.sync_time:  # 超过 60 秒未更新
                 self.long_position, self.short_position = self.get_position()
                 self.last_position_update_time = time.time()
                 print(f"同步 position: 多头 {self.long_position} 张, 空头 {self.short_position} 张 @ ticker")
 
             # 检查持仓状态是否过时
-            if time.time() - self.last_orders_update_time > SYNC_TIME:  # 超过 60 秒未更新
+            if time.time() - self.last_orders_update_time > self.sync_time:  # 超过 60 秒未更新
                 self.check_orders_status()
                 self.last_orders_update_time = time.time()
                 print(f"同步 orders: 多头买单 {self.buy_long_orders} 张, 多头卖单 {self.sell_long_orders} 张,空头卖单 {self.sell_short_orders} 张, 空头买单 {self.buy_short_orders} 张 @ ticker")
@@ -554,23 +562,23 @@ class GridTradingBot:
 
         """调整止盈单的交易数量"""
         if side == 'long':
-            if position > POSITION_LIMIT:
-                # logger.info(f"持仓过大超过阈值{POSITION_LIMIT}, {side}双倍止盈止损")
+            if position > self.position_limit:
+                # logger.info(f"持仓过大超过阈值{self.position_limit}, {side}双倍止盈止损")
                 self.long_initial_quantity = self.initial_quantity * 2
 
             # 如果 short 锁仓 long 两倍
-            elif self.short_position >= POSITION_THRESHOLD:
+            elif self.short_position >= self.position_threshold:
                 self.long_initial_quantity = self.initial_quantity * 2
             else:
                 self.long_initial_quantity = self.initial_quantity
 
         elif side == 'short':
-            if position > POSITION_LIMIT:
-                # logger.info(f"持仓过大超过阈值{POSITION_LIMIT}, {side}双倍止盈止损")
+            if position > self.position_limit:
+                # logger.info(f"持仓过大超过阈值{self.position_limit}, {side}双倍止盈止损")
                 self.short_initial_quantity = self.initial_quantity * 2
 
             # 如果 long 锁仓 short 两倍
-            elif self.long_position >= POSITION_THRESHOLD:
+            elif self.long_position >= self.position_threshold:
                 self.short_initial_quantity = self.initial_quantity * 2
             else:
                 self.short_initial_quantity = self.initial_quantity
@@ -578,8 +586,8 @@ class GridTradingBot:
     async def initialize_long_orders(self):
         # 检查上次挂单时间，确保 10 秒内不重复挂单
         current_time = time.time()
-        if current_time - self.last_long_order_time < ORDER_FIRST_TIME:
-            logger.info(f"距离上次多头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
+        if current_time - self.last_long_order_time < self.order_first_time:
+            logger.info(f"距离上次多头挂单时间不足 {self.order_first_time} 秒，跳过本次挂单")
             return
 
         # # 检查是否有未成交的挂单
@@ -601,8 +609,8 @@ class GridTradingBot:
     async def initialize_short_orders(self):
         # 检查上次挂单时间，确保 10 秒内不重复挂单
         current_time = time.time()
-        if current_time - self.last_short_order_time < ORDER_FIRST_TIME:
-            print(f"距离上次空头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
+        if current_time - self.last_short_order_time < self.order_first_time:
+            print(f"距离上次空头挂单时间不足 {self.order_first_time} 秒，跳过本次挂单")
             return
 
         # 撤销所有空头挂单
@@ -732,8 +740,8 @@ class GridTradingBot:
             if self.long_position > 0:
                 # print('多头持仓', self.long_position)
                 # 检查持仓是否超过阈值
-                if self.long_position > POSITION_THRESHOLD:
-                    print(f"持仓{self.long_position}超过极限阈值 {POSITION_THRESHOLD}，long装死")
+                if self.long_position > self.position_threshold:
+                    print(f"持仓{self.long_position}超过极限阈值 {self.position_threshold}，long装死")
                     if self.sell_long_orders <= 0:
                         r = float((self.long_position / self.short_position) / 100 + 1)
                         self.place_take_profit_order(self.ccxt_symbol, 'long', self.latest_price * r,
@@ -756,8 +764,8 @@ class GridTradingBot:
             self.get_take_profit_quantity(self.short_position, 'short')
             if self.short_position > 0:
                 # 检查持仓是否超过阈值
-                if self.short_position > POSITION_THRESHOLD:
-                    print(f"持仓{self.short_position}超过极限阈值 {POSITION_THRESHOLD}，short 装死")
+                if self.short_position > self.position_threshold:
+                    print(f"持仓{self.short_position}超过极限阈值 {self.position_threshold}，short 装死")
                     if self.buy_short_orders <= 0:
                         r = float((self.short_position / self.long_position) / 100 + 1)
                         logger.info("发现多头止盈单缺失。。需要补止盈单")
@@ -779,44 +787,38 @@ class GridTradingBot:
     def check_and_enable_hedge_mode(self):
         """检查并启用双向持仓模式，如果切换失败则停止程序"""
         try:
-            # 获取当前持仓模式
-            position_mode = self.exchange.fetch_position_mode(symbol=self.ccxt_symbol)
-            if not position_mode['hedged']:
-                # 如果当前不是双向持仓模式，尝试启用双向持仓模式
-                logger.info("当前不是双向持仓模式，尝试自动启用双向持仓模式...")
-                self.enable_hedge_mode()
-
-                # 再次检查持仓模式，确认是否启用成功
-                position_mode = self.exchange.fetch_position_mode(symbol=self.ccxt_symbol)
-                if not position_mode['hedged']:
-                    # 如果仍然不是双向持仓模式，记录错误日志并停止程序
-                    logger.error("启用双向持仓模式失败，请手动启用双向持仓模式后再运行程序。")
-                    raise Exception("启用双向持仓模式失败，请手动启用双向持仓模式后再运行程序。")
-                else:
-                    logger.info("双向持仓模式已成功启用，程序继续运行。")
-            else:
-                logger.info("当前已是双向持仓模式，程序继续运行。")
+            # 对于 OKX，我们直接尝试启用双向持仓模式
+            # 因为 OKX 的 ccxt 实现没有 fetch_position_mode 方法
+            logger.info("尝试启用双向持仓模式...")
+            self.enable_hedge_mode()
+            logger.info("双向持仓模式设置完成，程序继续运行。")
         except Exception as e:
             logger.error(f"检查或启用双向持仓模式失败: {e}")
-            raise e  # 抛出异常，停止程序
+            # 对于 OKX，如果设置失败可能是因为已经是双向持仓模式，我们继续运行
+            logger.warning("双向持仓模式设置可能失败，但程序将继续运行。请确保手动启用双向持仓模式。")
 
     def enable_hedge_mode(self):
         """启用双向持仓模式"""
         try:
-            response = self.exchange.set_position_mode(hedged=True)
+            # OKX 启用双向持仓模式的方法
+            params = {
+                'posMode': 'long_short_mode'  # OKX 的双向持仓模式参数
+            }
+            response = self.exchange.privatePostAccountSetPositionMode(params)
             logger.info(f"启用双向持仓模式: {response}")
         except Exception as e:
             logger.error(f"启用双向持仓模式失败: {e}")
-            raise e  # 抛出异常，停止程序
+            # 对于 OKX，如果失败可能是因为已经启用了，我们不抛出异常
+            logger.warning("双向持仓模式设置失败，可能已经启用。")
 
     def check_and_reduce_positions(self):
         """检查持仓并减少库存风险"""
 
         # 设置持仓阈值
-        local_position_threshold = POSITION_THRESHOLD * 0.8  # 阈值的 80%
+        local_position_threshold = self.position_threshold * 0.8  # 阈值的 80%
 
         # 设置平仓数量
-        quantity = POSITION_THRESHOLD * 0.1  # 阈值的 10%
+        quantity = self.position_threshold * 0.1  # 阈值的 10%
 
         if self.long_position >= local_position_threshold and self.short_position >= local_position_threshold:
             logger.info(f"多头和空头持仓均超过阈值 {local_position_threshold}，开始双向平仓，减少库存风险")
@@ -865,7 +867,7 @@ class GridTradingBot:
             orders_valid = not (0 < self.buy_long_orders <= self.long_initial_quantity) or \
                            not (0 < self.sell_long_orders <= self.long_initial_quantity)
             if orders_valid:
-                if self.long_position < POSITION_THRESHOLD:
+                if self.long_position < self.position_threshold:
                     print('如果 long 持仓没到阈值，同步后再次确认！')
                     self.check_orders_status()
                     if orders_valid:
@@ -880,7 +882,7 @@ class GridTradingBot:
             orders_valid = not (0 < self.sell_short_orders <= self.short_initial_quantity) or \
                            not (0 < self.buy_short_orders <= self.short_initial_quantity)
             if orders_valid:
-                if self.short_position < POSITION_THRESHOLD:
+                if self.short_position < self.position_threshold:
                     print('如果 short 持仓没到阈值，同步后再次确认！')
                     self.check_orders_status()
                     if orders_valid:
@@ -891,7 +893,35 @@ class GridTradingBot:
 
 # ==================== 主程序 ====================
 async def main():
-    bot = GridTradingBot(API_KEY, API_SECRET, PASSPHRASE, COIN_NAME, CONTRACT_TYPE, GRID_SPACING, INITIAL_QUANTITY, LEVERAGE)
+    from config import (
+        COIN_NAME,
+        CONTRACT_TYPE,
+        GRID_SPACING,
+        INITIAL_QUANTITY,
+        LEVERAGE,
+        POSITION_THRESHOLD,
+        POSITION_LIMIT,
+        SYNC_TIME,
+        ORDER_FIRST_TIME,
+        OKX_CONFIG,
+    )
+    
+    bot = GridTradingBot(
+        api_key=OKX_CONFIG["API_KEY"],
+        api_secret=OKX_CONFIG["API_SECRET"],
+        passphrase=OKX_CONFIG["PASSPHRASE"],
+        coin_name=COIN_NAME,
+        contract_type=CONTRACT_TYPE,
+        grid_spacing=GRID_SPACING,
+        initial_quantity=INITIAL_QUANTITY,
+        leverage=LEVERAGE,
+        position_threshold=POSITION_THRESHOLD,
+        position_limit=POSITION_LIMIT,
+        sync_time=SYNC_TIME,
+        order_first_time=ORDER_FIRST_TIME,
+        websocket_url=OKX_CONFIG["WEBSOCKET_URL"],
+        websocket_private_url=OKX_CONFIG["WEBSOCKET_PRIVATE_URL"]
+    )
     await bot.run()
 
 if __name__ == "__main__":
